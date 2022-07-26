@@ -57,9 +57,38 @@ public class InviewAPiService {
 	String entitleMentEndPoint = "orders/retrackOsdmessage";
 	String validateHardware = "clients/search/serial_no?columnValue=";
 	String getorderDetails = "orders/getRenewalOrderByClient?";
-	String authStr = "admin:admin";
+	String authStr = "integration:integration@2020";
 	String base64Creds = Base64.getEncoder().encodeToString(authStr.getBytes());
 
+	
+	  public String ActivationBoxwithBoxID(final String deviceID) {
+	        final String activationUrl = String.valueOf(this.baseURl) + this.boxActivation;
+	        final JSONObject clientData = new JSONObject();
+	        clientData.put("boxId", (Object)deviceID);
+	        final HttpHeaders headers = new HttpHeaders();
+	        headers.add("X-Obs-Platform-TenantId", "default");
+	        headers.add("Authorization", "Basic " + this.base64Creds);
+	        headers.add("Content-Type", "application/json");
+	        
+	        
+			HttpEntity<String> request = new HttpEntity<>(clientData.toString(), headers);
+	        ResponseEntity<String> result = null;
+	        try {
+	            result = (ResponseEntity<String>)this.restTemplate.exchange(activationUrl, HttpMethod.POST, (HttpEntity)request, (Class)String.class, new Object[0]);
+	        }
+	        catch (RestClientResponseException e) {
+				result = ResponseEntity.status(e.getRawStatusCode()).body(e.getResponseBodyAsString());
+	        }
+	        System.out.println(result);
+	        final int status = result.getStatusCodeValue();
+	        if (status == 200) {
+	            return "The Unique Box ID 301234567890 has been successfully registered and activated";
+	        }
+	        return "Activation Failed";
+	    }
+	
+	
+	
 	public String ActivationBox(String deviceID, String fristName, String lastName, String mobileNo, String city,
 			String state) {
 
@@ -352,6 +381,8 @@ public class InviewAPiService {
 		}
 
 	}
+	
+	
 
 	public static void main(String args[]) throws KeyManagementException, NoSuchAlgorithmException, KeyStoreException {
 		InviewAPiService service = new InviewAPiService();

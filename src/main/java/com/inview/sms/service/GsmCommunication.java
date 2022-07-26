@@ -15,6 +15,7 @@ import gnu.io.SerialPort;
 import gnu.io.SerialPortEvent;
 import gnu.io.SerialPortEventListener;
 import gnu.io.UnsupportedCommOperationException;
+import org.apache.commons.configuration.PropertiesConfiguration;
 
 @Component
 public class GsmCommunication implements Runnable, SerialPortEventListener {
@@ -31,15 +32,25 @@ public class GsmCommunication implements Runnable, SerialPortEventListener {
 	String sendingMessage = null;
 
 	public void portStart(SpringApplication application) {
-		portList = CommPortIdentifier.getPortIdentifiers();
-		while (portList.hasMoreElements()) {
-			portId = (CommPortIdentifier) portList.nextElement();
-			if (portId.getPortType() == CommPortIdentifier.PORT_SERIAL) {
-				if (portId.getName().equals("COM7")) {
-					GsmCommunication reader = new GsmCommunication("Reading app");
+		try {
+			portList = CommPortIdentifier.getPortIdentifiers();
+			String currentDir = System.getProperty("user.dir");
+			PropertiesConfiguration prop = new PropertiesConfiguration(currentDir + "/SmsGsmApplication.ini");
+			String portName = prop.getString("PORT_NAME").trim();
+			while (portList.hasMoreElements()) {
+				portId = (CommPortIdentifier) portList.nextElement();
+				if (portId.getPortType() == CommPortIdentifier.PORT_SERIAL) {
+					if (portId.getName().equals(portName)) { // if (portId.getName().equals("COM7")) {
+						System.out.println("Connecting to port :" + portName);
 
+						GsmCommunication reader = new GsmCommunication("Reading app");
+
+					}
 				}
 			}
+		} catch (org.apache.commons.configuration.ConfigurationException e) {
+			System.out.println("(ConfigurationException) Properties file loading error.... : " + e.getMessage());
+			e.printStackTrace();
 		}
 	}
 
@@ -176,40 +187,33 @@ public class GsmCommunication implements Runnable, SerialPortEventListener {
 	public String readMessage(String messagepos) {
 
 		try {
-			String recievedmessage = "AT +CMGR=" + messagepos;
-
-			outputStream.write(recievedmessage.getBytes());
-			outputStream.write(s2.getBytes());
-			Thread.sleep(1000);
-
+			final String recievedmessage = "AT +CMGR=" + messagepos;
+			GsmCommunication.outputStream.write(recievedmessage.getBytes());
+			GsmCommunication.outputStream.write(this.s2.getBytes());
+			Thread.sleep(1000L);
 			String readingMessage = null;
-			byte[] readBuffering = new byte[200];
-
-			while (inputStream.available() > 0) {
-				int numBytes = inputStream.read(readBuffering);
-
+			final byte[] readBuffering = new byte[200];
+			while (GsmCommunication.inputStream.available() > 0) {
+				final int numBytes = GsmCommunication.inputStream.read(readBuffering);
 				readingMessage = new String(readBuffering);
-
-				System.out.println(numBytes);
 			}
-
 			System.out.println(readingMessage);
-			Pattern pattern = Pattern.compile("\\d{12}");
-			Matcher matcher = pattern.matcher(readingMessage);
-
+			final Pattern pattern = Pattern.compile("\\d{12}");
+			final Matcher matcher = pattern.matcher(readingMessage);
 			if (matcher.find()) {
-				receviedMobileNo = matcher.group(0);
-				System.out.println(receviedMobileNo);
+				this.receviedMobileNo = matcher.group(0);
 			}
-
-			String[] result = readingMessage.split("\\R");
-			String message = result[2];
+			final String trimingmessage = readingMessage.replace("OK", "");
+			final String removingEmptyLinesfromMessage = trimingmessage.replaceAll("(?m)^[ \t]*\r?\n", "");
+			final String[] lines = removingEmptyLinesfromMessage.split("\\n");
+			final String message = lines[1];
 			System.out.println("Incomig Message From Cust:" + message);
-			String[] messageSplit = message.split(" ");
-			int messageLength = messageSplit.length;
+			final String[] messageSplit = message.split(" ");
+			final int messageLength = messageSplit.length;
 			System.out.println(messageLength);
-
-			InviewAPiService inviewAPiService = new InviewAPiService();
+			final InviewAPiService inviewAPiService = new InviewAPiService();
+			final GsmCommunication gsmCommunication = new GsmCommunication();
+			gsmCommunication.deleteMessage(messagepos);
 
 			if (message.startsWith("RF")) {
 				String deviceId = messageSplit[1];
@@ -223,12 +227,13 @@ public class GsmCommunication implements Runnable, SerialPortEventListener {
 				sendingMessage = inviewAPiService.moviepurchase(deviceID, itemID, voucherId);
 
 			} else if (messageLength == 2) {
-				String deviceId = messageSplit[0];
-				Long clientId = inviewAPiService.validateHardWare(deviceId);
-				Long orderId = inviewAPiService.getOrderDetails(clientId);
-				String voucherId = messageSplit[1];
-				sendingMessage = inviewAPiService.topup(deviceId, voucherId, orderId);
-
+				final String deviceId = messageSplit[0];
+				final Long clientId = inviewAPiService.validateHardWare(deviceId);
+				final Long orderId = inviewAPiService.getOrderDetails(clientId);
+				final String voucherId2 = messageSplit[1].substring(0, 18);
+				System.out.println(voucherId2);
+				System.out.println(voucherId2);
+				this.sendingMessage = inviewAPiService.topup(deviceId, voucherId2, orderId);
 			} else if (messageLength == 6) {
 				String deviceID = messageSplit[0];
 				String fristName = messageSplit[1];
@@ -239,6 +244,19 @@ public class GsmCommunication implements Runnable, SerialPortEventListener {
 				String state = messageSplit[5];
 
 				sendingMessage = inviewAPiService.ActivationBox(deviceID, fristName, lastName, mobileNo, city, state);
+			} else if (messageLength == 1) {
+				final String deviceID = messageSplit[0];
+				this.sendingMessage = inviewAPiService.ActivationBoxwithBoxID(deviceID);
+			} else if (message.toUpperCase().startsWith("DTV")) {
+				System.out.println("DTV pass ");
+				final String deviceID = messageSplit[1];
+				final Long clientId = inviewAPiService.validateHardWare(deviceID);
+				final Long orderId = inviewAPiService.getOrderDetails(clientId);
+				final String voucherId2 = messageSplit[2].substring(0, 18);
+				System.out.println(voucherId2);
+				this.sendingMessage = inviewAPiService.topup(deviceID, voucherId2, orderId);
+			} else {
+				System.out.println("invalid pattern");
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
